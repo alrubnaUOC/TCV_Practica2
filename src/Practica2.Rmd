@@ -1,0 +1,856 @@
+---
+title: "Tipología y ciclo de vida de los datos - Práctica 2"
+author: "Alfredo Rubio Navarro"
+date: "2/6/2020"
+output:
+  html_document:
+    toc: yes
+    theme: united
+  pdf_document:
+    toc: yes
+---    
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(car)
+library(ResourceSelection)
+library(ROCR)
+```
+
+
+## 1. Descripción del dataset.
+¿Por qué es importante y qué pregunta/problema pretende responder?
+
+El dataset elegido para la práctica estudia la presencia o ausencia de enfermedad 
+cardiaca basándose en los datos de 1025 pacientes de cuatro centros hospitalarios 
+distintos: Cleveland, Hungary, Switzerland, and Long Beach V.  
+
+La URL correspondiente al dataset es https://www.kaggle.com/johnsmith88/heart-disease-dataset/data.  
+
+La pregunta que intenta responder es: 
+¿Cuáles son los factores que debemos tener en cuenta a la hora de clasificar un
+nuevo paciente con síntomas de enfermedad coronaria?
+
+Está claro que cuanto antes se diagnostique correctamente y se trate al paciente,
+mayores posibilidades tiene de recuperarse o de no sufrir secuelas.  
+El conjunto de datos incluye sujetos sanos y pacientes con enfermedades cardíacas,
+de 29 a 77 años.
+
+El dataset contiene un total de 14 características clínicas para cada caso.
+
+Los atributos del dataset son:  
+
+ 1. **age**: Edad del paciente en años.  
+ 2. **sex**: Sexo (1 = hombre; 0 = mujer).  
+ 3. **cp**: Tipo de dolor en el pecho:  
+    (0 = asintomático; 1 = angina atípica; 2 = dolor no anginal; 3 = angina típica)  
+ 4. **trestbps**: Presión sanguínea en reposo al ser admitido en el hospital en mm Hg.  
+ 5. **chol**: Nivel de colesterol en sangre en mg/dl.  
+ 6. **fbs**: Nivel de azúcar en sangre en ayunas > 120 mg/dl (1 = si; 0 = no).  
+ 7. **restecg**: Resultados electrocardiográficos en reposo.  
+    (0 = hipertrofia ventricular izquierda; 1 = normal; 2 = anormalidad onda ST-T)
+ 8. **thalach**: Frecuencia cardíaca máxima alcanzada.  
+ 9. **exang**: Angina inducida por el ejercicio (1 = si; 0 = no).  
+10. **oldpeak**: Depresión onda ST inducida por el ejercicio relativo al descanso.  
+11. **slope**: Pendiente del segmento ST del ejercicio pico.  
+    (0 = bajada; 1 = plano; 2 = pendiente ascendente)  
+12. **ca**: Número de vasos principales (0-4) coloreados por flouroscopia. 
+    (indicador específico de insuficiencia isquémica).  
+13. **thal**: Exploración cardíaca de talio.  
+    (1 = defecto permanente; 2 = normal;3 = defecto reversible).  
+14. **target**: Diagnóstico de enfermedad cardíaca.  
+    (0 = enfermo; 1 = sano)  
+
+## 2. Integración y selección de los datos de interés a analizar.
+
+Cargamos el dataset en memoria.
+```{r}
+datos <- read.table("datasets_216167_477177_heart.csv", header = TRUE, sep = ",")
+```
+
+Les cambiamos los nombres a las variables para mejorar la claridad.
+```{r}
+colnames(datos) <- c('edad','sexo','dolor','tension','colesterol','azucar',
+                     'ecografia','frecmax','ejercicio','depST','pendiente',
+                     'vasos.coloreados','exploracion.talio','diagnostico')
+```
+
+Obtenemos el resumen de los datos obtenidos.
+```{r}
+summary(datos)
+```
+Y su estructura.
+```{r}
+str(datos)
+```
+Podemos ver una muestra de los datos.
+```{r}
+head(datos)
+```
+
+Nuestro interés se centra en identificar y cuantificar las variables que tienen un mayor impacto sobre nuestra variable objetivo, el diagnóstico del paciente.
+
+
+## 3. Limpieza de los datos.
+
+### 3.1. Datos ausentes.
+¿Los datos contienen ceros o elementos vacíos? ¿Cómo gestionarías cada uno de estos casos?
+
+Estudiamos caso por caso todas las variables.
+
+Primero la variable edad.
+Ya hemos visto en la salida del comando *summary()* que el rango de edad está comprendido entre 29 y 77 años, lo cual es plausible. Veamos si tiene falta algún valor:
+```{r}
+table(is.na(datos$edad))
+```
+Las 1025 son válidas.  
+En el caso de que la edad estuviera fuera del rango razonable podríamos suponer que se trata de un error y descartar la observación o bien sustituirlo por un valor de tendencia central como la media, o la mediana (si hay presencia de valores extremos).
+
+Veamos como se distribuye la variable sexo.
+```{r}
+table(datos$sexo)
+```
+Si alguno de los valores no fuera 0 ó 1, ya sea NA o valores distintos, podríamos utilizar una tercera categoría para la variable que indicara que el sexo del paciente no es conocido y realizar el análisis con tres niveles de la variable.
+
+Se trata realmente de una variable categórica, así que la convertimos a tipo factor.
+```{r}
+datos$sexo[datos$sexo == 0] <- "mujer"
+datos$sexo[datos$sexo == 1] <- "hombre"
+datos$sexo <- as.factor(datos$sexo)
+table(datos$sexo)
+```
+
+Variable dolor.
+```{r}
+table(is.na(datos$dolor))
+```
+Veamos que no falta ningún valor.
+Veamos ahora como se distribuye la variable.
+```{r}
+table(datos$dolor)
+```
+Al igual quen con la variable *sexo*, se trata también de una variable categórica con cuatro valores posibles, así que la convertimos a tipo factor según los datos de los tipos de dolor.
+```{r}
+datos$dolor[datos$dolor == 0] <- "asintomatico"
+datos$dolor[datos$dolor == 1] <- "atipico"
+datos$dolor[datos$dolor == 2] <- "otro"
+datos$dolor[datos$dolor == 3] <- "tipico"
+datos$dolor <- as.factor(datos$dolor)
+```
+Los datos quedan ahora de la siguiente forma.
+```{r}
+table(datos$dolor)
+```
+Estudiamos valores faltantes en la variable tensión.
+```{r}
+table(is.na(datos$tension))
+```
+En cuanto a sus valores, según la salida del comando *summary* el rango está entre 94 y 200, dentro de los valores posibles.
+
+Veamos el colesterol.
+```{r}
+table(is.na(datos$colesterol))
+```
+No falta ningún valor. El rango de valores de la variable es de 126 a 564. Valores plausibles a pesar de que en algunos casos son muy elevados.
+Un valor de 0 por ejemplo, tendríamos que descartarlo o sustituirlo (por la media, por ejemplo) ya que en este caso no tiene sentido que un paciente tenga colesterol 0.
+
+En cuanto a la variable *azucar*, tampoco le faltan datos.
+```{r}
+table(is.na(datos$azucar))
+```
+La distribución de sus valores es la siguiente.
+```{r}
+table(datos$azucar)
+```
+
+Vemos que solo tiene dos posibles valores, la convertimos de entera a categórica.
+```{r}
+datos$azucar[datos$azucar == 1] <- "si"
+datos$azucar[datos$azucar == 0] <- "no"
+datos$azucar <- as.factor(datos$azucar)
+table(datos$azucar)
+```
+En el caso de que la variable tuviera valores distintos al 0 y al 1, podríamos crear una nueva categoría para la variable que fuera "valor desconocido", e incluir en este caso el resto de valores.
+
+Para la variable *ecografía* ocurre lo mismo.
+```{r}
+table(is.na(datos$ecografia))
+```
+```{r}
+table(datos$ecografia)
+```
+
+Solo tiene 3 posibles valores, la reconvertimos a tipo factor.
+```{r}
+datos$ecografia[datos$ecografia == 0] <- "hipertrofia" 
+datos$ecografia[datos$ecografia == 1] <- "normal"
+datos$ecografia[datos$ecografia == 2] <- "anormal"
+datos$ecografia <- as.factor(datos$ecografia)
+table(datos$ecografia)
+```
+
+
+*Frecuencia cardiaca máxima*.
+```{r}
+table(is.na(datos$frecmax))
+```
+No falta ningún valor y todos se encuentran dentro de valores posibles (71-202).
+Un valor de debajo de 20 pulsaciones o por encima de 300 (por poner unos límites) podríamos considerarlo como un dato erróneo y habría que descartarlo o sustituirlo.
+
+Variable *ejercicio*.
+```{r}
+table(datos$ejercicio)
+```
+La tratamos de forma similar.
+```{r}
+datos$ejercicio[datos$ejercicio == 1] <- "si"
+datos$ejercicio[datos$ejercicio == 0] <- "no"
+datos$ejercicio <- as.factor(datos$ejercicio)
+table(datos$ejercicio)
+```
+
+Variable *depST*.
+```{r}
+table(is.na(datos$depST))
+```
+Esta variable mide la depresión de la onda ST del electrocardiograma en una prueba de esfuerzo.
+El rango de la variable va de 0 a 6.2.
+
+
+Variale *pendiente*.
+```{r}
+table(datos$pendiente)
+```
+La reconvertimos a factor.
+```{r}
+datos$pendiente[datos$pendiente == 0] <- "bajada"
+datos$pendiente[datos$pendiente == 1] <- "plana"
+datos$pendiente[datos$pendiente == 2] <- "subida"
+datos$pendiente <- as.factor(datos$pendiente)
+table(datos$pendiente)
+```
+ 
+
+Variable *vasos.coloreados*.
+```{r}
+table(datos$vasos.coloreados)
+```
+No le faltan valores.
+Solo tiene 5 opciones, la podemos tratar como una variable categórica, así que la convertimos a factor.
+En este caso podríamos mantener la variable como numérica pero no tiene mucho sentido porque no vamos a realizar operaciones numéricas con ella.
+```{r}
+datos$vasos.coloreados <- as.factor(datos$vasos.coloreados)
+table(datos$vasos.coloreados)
+```
+
+Variable *exploracion.talio*.
+```{r}
+table(datos$exploracion.talio)
+```
+Vemos que hay 7 pacientes de los que no tenemos información, así que los codificamos como pacientes "sin información" sobre este dato. El resto de caso, los asociamos según la meta información que tenemos sobre el dataset.
+```{r}
+datos$exploracion.talio[datos$exploracion.talio == 0] <- "desconocido"
+datos$exploracion.talio[datos$exploracion.talio == 1] <- "daño_permanente"
+datos$exploracion.talio[datos$exploracion.talio == 2] <- "sin_daño"
+datos$exploracion.talio[datos$exploracion.talio == 3] <- "daño_reversible"
+datos$exploracion.talio <- as.factor(datos$exploracion.talio)
+table(datos$exploracion.talio)
+```
+
+Por último tenemos la variable que nos muestra el resultado final del paciente: *diagnostico*
+```{r}
+table(datos$diagnostico)
+```
+Variable dicotómica que convertimos a tipo factor. 
+```{r}
+datos$diagnostico[datos$diagnostico == 0] <- "enfermo"
+datos$diagnostico[datos$diagnostico == 1] <- "sano"
+datos$diagnostico <- as.factor(datos$diagnostico)
+table(datos$diagnostico)
+```
+
+
+### 3.2. Identificación y tratamiento de valores extremos.
+
+Estudiamos la distribución de las variables cualitativas.
+
+En el caso de la edad vemos que no hay valores extremos.
+```{r}
+caja.edad <- boxplot(datos$edad, ylab = "Edad"  )
+```
+
+Para la variable *tensión*.
+```{r}
+caja.tension <- boxplot(datos$tension, ylab = "Tensión")
+```
+
+La lista de los valores extermos es la siguiente.
+```{r}
+table(caja.tension$out)
+```
+Podemos ver que hay unos cuantos valores extremos, en concreto 30.
+Ya que son valores plausibles, entendemos que corresponden a la realidad, no se trata de errores de medida.
+
+Para la variable *colesterol*.
+```{r}
+caja.colesterol <- boxplot(datos$colesterol, ylab = "Colesterol")
+```
+
+La lista de los valores extremos es la siguiente.
+```{r}
+table(caja.colesterol$out)
+```
+Ocurre algo similar al caso de la tensión, son valores que pueden ser válidos.
+
+Estos valores tan altos pueden ser debidos a la hipercolesterolemia familiar, un trastorno grave ocasionado por mutaciones en las lipoproteínas que transportan el colesterol.
+En estos casos el nivel de colesterol se sitúa entre los 300 y 500 miligramos por decilitro (mg/dl).
+
+Variable *frecmax*.
+```{r}
+caja.frecmax <- boxplot(datos$frecmax, ylab = "Frecuencia máxima")
+```
+
+Los valores extermos son.
+```{r}
+table(caja.frecmax$out)
+```
+Solo hay cuatro casos pero las pulsaciones pueden considerarse normales, no errores de medida.
+
+Para la variable *depST*.
+Una de las variables más importantes a evaluar es el comportamiento del segmento ST dentro de un electrocardiograma.
+La depresión descendente como horizontal del segmento ST son potentes predictores de enfermedad coronaria.
+```{r}
+caja.depST <- boxplot(datos$depST, ylab = "Depresión del segmento ST")
+```
+
+La lista de los valores extremos es la siguiente.
+```{r}
+table(caja.depST$out)
+```
+
+
+
+## 4. Análisis de los datos.
+
+### 4.1. Agrupamiento.
+Selección de los grupos de datos que se quieren analizar/comparar (planificación de los análisis a aplicar).
+
+Nos interesa comparar la incidencia que tiene cada una de las variables del dataset en el diagnóstico final del paciente para conocer de qué manera afectan al resultado, tanto por separado y como en conjunto.
+
+### 4.2. Comprobación de la normalidad y homogeneidad de la varianza.
+
+Estudiamos la normalidad de la variable *edad*.
+
+Visualizamos el histograma de la variable junto a la curva de la distribución normal a la que equivaldría.
+```{r}
+ggplot(data = datos, aes(x = edad)) + geom_histogram(aes(y = ..density.., fill = ..count..), bins = 25) +
+  stat_function(fun = dnorm, colour = "red",args = list(mean = mean(datos$edad), sd = sd(datos$edad))) +
+  ggtitle("Histograma / Curva normal teórica")
+```
+
+Revisamos también la gráfica Q-Q para ver las diferencias frente a la normal.
+```{r}
+qqnorm(datos$edad)
+qqline(datos$edad)
+```
+
+Se aproxima pero tiene ciertas discrepancias, sobretodo en los extermos.
+
+Podemos usar el test de Shapiro-Wilk si tenemos memos de 5000 muestras, cuya hipótesis nula es que se ajusta a una distribución normal.
+```{r}
+shapiro.test(x = datos$edad)
+```
+Tenemos un p < 0.05 por lo que tenemos una distribución que no es normal (rechazamos hipótesis nula).
+
+
+
+Variable *tensión*.
+```{r}
+ggplot(data = datos, aes(x = tension)) + geom_histogram(aes(y = ..density.., fill = ..count..), bins = 20) +
+  stat_function(fun = dnorm, colour = "red",args = list(mean = mean(datos$tension), sd = sd(datos$tension))) +
+  ggtitle("Histograma / Curva normal teórica")
+```
+
+Revisamos también la gráfica Q-Q.
+```{r}
+qqnorm(datos$tension)
+qqline(datos$tension)
+```
+
+A simple vista vemos que no se ajusta mucho a la normal.
+Probamos con el test de normalidad.
+```{r}
+shapiro.test(x = datos$tension)
+```
+El p-valor es menor que 0.05, rechazamos hipótesis nula, luego no se ajusta a una distribución normal.
+
+
+Variable *colesterol*.
+```{r}
+ggplot(data = datos, aes(x = colesterol)) + geom_histogram(aes(y = ..density.., fill = ..count..), bins = 25) +
+  stat_function(fun = dnorm, colour = "firebrick",args = list(mean = mean(datos$colesterol), sd = sd(datos$colesterol))) +
+  ggtitle("Histograma / Curva normal teórica")
+```
+
+Se aproxima un poco mejor a la normal.
+```{r}
+qqnorm(datos$colesterol)
+qqline(datos$colesterol)
+```
+
+Según el test de normalidad.
+```{r}
+shapiro.test(x = datos$colesterol)
+```
+Seguimos afirmando que según el test de Shapiro-Wilk, nos indica que el colesterol tampoco se ajusta a una distribución normal.
+
+
+Variable *frecmax*.
+```{r}
+ggplot(data = datos, aes(x = frecmax)) +  geom_histogram(aes(y = ..density.., fill = ..count..), bins = 25) +
+  stat_function(fun = dnorm, colour = "firebrick",args = list(mean = mean(datos$frecmax), sd = sd(datos$frecmax))) +
+  ggtitle("Histograma / Curva normal teórica")
+```
+
+```{r}
+qqnorm(datos$frecmax)
+qqline(datos$frecmax)
+```
+
+Realizamos el test de normalidad.
+```{r}
+shapiro.test(x = datos$frecmax)
+```
+Obtenemos el mismo resultado, p-valor < 0.05, no es distribución normal (rechazamos hipótesis nula).
+
+
+Variable *depST*.
+```{r}
+ggplot(data = datos, aes(x = depST)) +  geom_histogram(aes(y = ..density.., fill = ..count..), bins = 25) +
+  stat_function(fun = dnorm, colour = "firebrick",args = list(mean = mean(datos$depST), sd = sd(datos$depST))) +
+  ggtitle("Histograma / Curva normal teórica")
+```
+
+En este caso se aleja bastante de la normal porque los casos con 0 sobresalen mucho sobre el resto.
+Podemos constatarlo en el diagrama Q-Q.
+```{r}
+qqnorm(datos$depST)
+qqline(datos$depST)
+```
+
+Y como podíamos sospechar, el test de Shapiro-Wilk también confirma que no es una distribución normal.
+```{r}
+shapiro.test(x = datos$depST)
+```
+
+---
+
+Estudiamos ahora la homogeneidad de la varianza (homocedasticidad) de la variable edad entre los grupos de estudio, los enfermos y los sanos.
+
+Ya que no vamos a suponer normalidad de los grupos, usaremos el test de Levene con la mediana.
+
+Hipótesis nula: La varianza es igual entre los grupos (enfermos y sanos).  
+Hipótesis alternativa: La varianza es distinta.
+
+```{r}
+leveneTest(y = datos$edad,  group = datos$diagnostico, center = "median")
+```
+Obtenemos un p-valor < 0.05, luego rechazamos la hipótesis nula, y consideraremos que la varianza es distinta.
+
+
+Podemos verlo gráficamente.
+```{r}
+ggplot(datos,aes(x=diagnostico)) + geom_boxplot(aes(y=edad, col = diagnostico)) + xlab("Diagnóstico")+ ylab("Edad")
+```
+
+
+Estudiamos ahora la homogeneidad de la varianza de la variable *tensión* entre los grupos de estudio, los enfermos y los sanos.
+
+Como la variable no se distribuye de forma normal, volvemos a usaremos el test de Levene con la mediana.
+```{r}
+leveneTest(y = datos$tension,  group = datos$diagnostico, center = "median")
+```
+Obtenemos un p-valor < 0.05, luego rechazamos la hipótesis nula, y consideraremos que la varianza es distinta.
+En este caso, para un test con nivel de significancia de 0.01, no podríamos rechazar la hipótesis nula.
+
+Podemos verlo gráficamente.
+```{r}
+ggplot(datos,aes(x=diagnostico)) + geom_boxplot(aes(y=tension, col = diagnostico)) + xlab("Diagnóstico")+ ylab("Tensión")
+```
+
+Observamos que las distribuciones en este caso son parecidas.
+
+
+Estudiamos la homogeneidad de la varianza de la variable *colesterol* entre los grupos de estudio, los enfermos y los sanos.
+
+Como la variable no se distribuye de forma normal, volvemos a usaremos el test de Levene con la mediana.
+```{r}
+leveneTest(y = datos$colesterol,  group = datos$diagnostico, center = "median")
+```
+Obtenemos un p-valor > 0.05, luego no podemos rechazar la hipótesis nula, y consideraremos que la varianza no es distinta para los dos grupos.
+
+Visto gráficamente.
+```{r}
+ggplot(datos,aes(x=diagnostico)) + geom_boxplot(aes(y=colesterol, col = diagnostico)) + xlab("Diagnóstico")+ ylab("Colesterol")
+```
+
+Para el caso de la variable *frecmax*, seguimos el mismo procedimiento para estudiar la homocedasticidad.
+```{r}
+leveneTest(y = datos$frecmax,  group = datos$diagnostico, center = "median")
+```
+Obtenemos un p-valor < 0.05, rechazamos por tanto la hipótesis nula, y consideraremos que la varianza es distinta.
+
+Gráficamente.
+```{r}
+ggplot(datos,aes(x=diagnostico)) + geom_boxplot(aes(y=frecmax, col = diagnostico)) + xlab("Diagnóstico")+ ylab("Frecuencia máxima")
+```
+
+Por último, para la variable cuantitativa *depSt*, estudiamos la hogeneidad de la varianza con el test de Levene.
+```{r}
+leveneTest(y = datos$depST,  group = datos$diagnostico, center = "median")
+```
+Obtenemos un p-valor < 0.05, rechazamos por tanto la hipótesis nula, y consideraremos que la varianza es distinta.
+
+Gráficamente.
+```{r}
+ggplot(datos,aes(x=diagnostico)) + geom_boxplot(aes(y=depST, col = diagnostico)) + xlab("Diagnóstico")+ ylab("Depresión onda ST")
+```
+
+En este caso vemos la diferencia bastante pronunciada entre los grupos como constata el valor tan alto de F del test.
+
+
+### 4.3. Aplicación de pruebas estadísticas para comparar los grupos de datos.
+En función de los datos y el objetivo del estudio, aplicar pruebas de contraste de hipótesis, correlaciones, regresiones, etc. Aplicar al menos tres métodos de análisis diferentes.
+
+
+Vamos a realizar test sobre algunas de las variables para conocer en qué medida pueden afectar al diagnóstico.
+Todos los test los haremos con un nivel de confianza del 95% salvo que se indique lo contrario.
+
+--- 
+
+¿Es la edad factor de riesgo de sufrir enfermedad coronaria?
+
+Planteamos un contraste de hipótesis:
+
+Hipótesis nula : promedio edad enfermos = promedio edad sanos
+Hipótesis alternativa: promedio edad enfermos > promedio edad sanos
+
+Realizaremos dos pruebas distintas, una suponiendo que las poblaciones son normales con varianzas poblacionales iguales, y otro test no paramétrico que no suponga normalidad de las muestras.
+
+1. Población normal con varianzas poblacionales desconocidas pero iguales.
+
+El estadístico de contraste en este caso corresponde a una observación de una distribución t de Student con n1 + n2 - 2 grados de libertad.
+
+t = $\frac{\overline{x_{1}}-\overline{x_{2}}}{s\sqrt{ \frac{1}{n_{1}} + \frac{1}{n_{2}} }}$
+
+Dividimos los datos en los dos grupos que vamos a estudiar, las edades de los pacientes enfermos y las edades de los pacientes sanos.
+```{r}
+enfermos <- datos$edad[datos$diagnostico == "enfermo"]
+sanos <- datos$edad[datos$diagnostico == "sano"]
+```
+
+Realizamos el test
+```{r}
+x1 <- mean(enfermos) # media enfermos
+x2 <- mean(sanos) # media sanos
+n1 <- length(enfermos) # número de muestras enfermos
+n2 <- length(sanos) # número de muestras sanos
+df = n1+n2-2 # grados de libertad
+s1 <- sd(enfermos) # desviación estándar muestral enfermos
+s2 <- sd(sanos) # desviación estándar muestral sanos
+
+s <- sqrt(((n1-1)*s1^2 + (n2-1)*s2^2) / df)
+t <- (x1-x2)/( s*sqrt((1/n1)+(1/n2))) # estadístico de contraste
+p.valor <- pt(t, df,lower.tail = FALSE) # probabilidad cola derecha de la distribución t
+p.valor
+```
+Según el p-valor obtenido en comparación con el nivel de significación escogido (p-valor < 0.05), rechazaremos la hipótesis nula en favor de la hipótesis alternativa, es decir, que la edad promedio de los pacientes enfermos es mayor que la edad promedio de los paciente sanos.
+
+
+
+2. Poblaciones no normales.
+Si no podemos asumir normalidad, utilizamos el test U de Mann-Whitney (Wilcoxon) que se puede aplicar cuando los datos son independientes.
+
+La función wilcox.test realiza una prueba de suma de rango de Wilcoxox comparando las medianas de las distribuciones.
+
+Hipótesis nula: Mediana de edad de pacientes enfermos = Mediana de edad de pacientes sanos.  
+Hipótesis alternativa: Mediana de edad de pacientes enfermos > Mediana de edad de pacientes sanos.  
+
+Relizamos el test con la función *wilcox.test*.
+```{r}
+wilcox.test(x = enfermos, y = sanos, alternative = "greater", conf.level =  0.95, conf.int = TRUE)
+```
+El resultado del test es significativo, nos proporciona un p-valor < 0.05, por lo tanto rechazamos la hipótesis nula, y podemos considerar que la mediana de los pacientes enfermos es mayor que la mediana de los pacientes sanos.
+
+Este resultado corrobora el obtenido en el primer test suponiendo normalidad de las muestras.
+
+---
+
+¿Es el sexo del paciente relevante para obtener un diagnóstico?  
+Queremos saber si el sexo es independiente del diagnóstico obtenido por el paciente.
+
+Establecemos la siguiente hipótesis:
+Hipótesis nula:        El sexo del paciente y su diagnóstico son independientes.  
+Hipótesis alternativa: El sexo del paciente y su diagnóstico no son independientes.  
+
+Las dos variables son cualititativas, aplicaremos un contraste chi-cuadrado para determinar si las dos variables son independientes.  
+Que dos variables sean independientes significa que no tienen relación, y que por lo tanto una no depende de la otra, ni viceversa.  
+Suponemos que las muestras son independientes y comprobamos que todos los valores esperados son mayores que 5 para poder aplicar el test.  
+El estadístico chi-cuadrado tomará un valor igual a 0 si existe concordancia perfecta entre las frecuencias observadas y las esperadas y tomará un valor grande si existe una gran discrepancia entre estas frecuencias, y consecuentemente se deberá rechazar la hipótesis nula.  
+
+
+Obtenemos primero la matriz de contingencia.
+```{r}
+mat.contingencia <- table(datos$diagnostico, datos$sexo)
+mat.contingencia
+```
+Y con ella realizamos el test.
+```{r}
+chisq.test(mat.contingencia)
+```
+
+La prueba es significativa (p-valor < 0.05), el valor p está por debajo del nivel de significación, así que rechazamos la hipótesis nula y aceptamos la hipótesis alternativa, por lo tanto las dos variables no son independientes.
+
+
+Podemos visualizar las dos variables.
+```{r}
+ggplot(datos,aes(x=sexo,fill=diagnostico)) +geom_bar() + xlab("Sexo") + ylab("Total") + scale_fill_discrete(name="Diagnóstico")
+```
+
+Y como proporción.
+```{r}
+ggplot(datos,aes(x=sexo,fill=diagnostico)) +geom_bar(position="fill") + xlab("Sexo") + ylab("Proporción") + scale_fill_discrete(name="Diagnóstico")
+```
+
+O visto en forma de mosaico.
+```{r}
+mosaicplot(mat.contingencia, color=TRUE, main="Plot de mosaico")
+```
+
+---
+
+Para el resto de variables podemos proceder de la misma forma.
+
+Visualizaremos la relación entre el resto de variables categóricas y el diagnóstico para tener una idea aproximada de la incidencia que pueden tener sobre el resultado.  
+Las variables cuantitativas ya las hemos visualizado gráficamente al estudiar su homocedasticidad.
+
+
+
+Variable *dolor*.
+```{r}
+ggplot(datos,aes(x=dolor,fill=diagnostico)) +geom_bar() + xlab("Dolor") + ylab("Total") + scale_fill_discrete(name="Diagnóstico")
+```
+
+Visto en proporción.
+```{r}
+ggplot(datos,aes(x=dolor,fill=diagnostico)) +geom_bar(position="fill") + xlab("Dolor") + ylab("Proporción") + scale_fill_discrete(name="Diagnóstico")
+```
+
+Variable *azucar* en sangre.
+```{r}
+ggplot(datos,aes(x=azucar,fill=diagnostico)) +geom_bar() + xlab("Azúcar > 120 mg/dl") + ylab("Total") + scale_fill_discrete(name="Diagnóstico")
+```
+
+En proporción.
+```{r}
+ggplot(datos,aes(x=azucar,fill=diagnostico)) +geom_bar(position="fill") + xlab("Azúcar > 120 mg/dl") + ylab("Proporción") + scale_fill_discrete(name="Diagnóstico")
+```
+
+Variable *ecografía*.
+```{r}
+ggplot(datos,aes(x=ecografia,fill=diagnostico)) +geom_bar() + xlab("Resultado ecografía") + ylab("Total") + scale_fill_discrete(name="Diagnóstico")
+```
+
+En proporción.
+```{r}
+ggplot(datos,aes(x=ecografia,fill=diagnostico)) +geom_bar(position="fill") + xlab("Resultado ecografía") + ylab("Proporción") + scale_fill_discrete(name="Diagnóstico")
+```
+
+
+Variable *ejercicio* (angina inducida por el ejercicio físico).
+```{r}
+ggplot(datos,aes(x=ejercicio,fill=diagnostico)) +geom_bar() + xlab("Angina inducida por ejercicio") + ylab("Total") + scale_fill_discrete(name="Diagnóstico")
+```
+
+En proporción.
+```{r}
+ggplot(datos,aes(x=ejercicio,fill=diagnostico)) +geom_bar(position="fill") + xlab("Angina inducida por ejercicio") + ylab("Proporción") + scale_fill_discrete(name="Diagnóstico")
+```
+
+Variable *pendiente* (pendiente del segmento ST del electrocardiograma en el pico de ejercicio).
+```{r}
+ggplot(datos,aes(x=pendiente,fill=diagnostico)) +geom_bar() + xlab("Pendiente segmento ST") + ylab("Total") + scale_fill_discrete(name="Diagnóstico")
+```
+
+En proporción.
+```{r}
+ggplot(datos,aes(x=pendiente,fill=diagnostico)) +geom_bar(position="fill") + xlab("Pendiente segmento ST") + ylab("Proporción") + scale_fill_discrete(name="Diagnóstico")
+```
+
+Variable *vasos.coloreados* (número de vasos sanguíneos principales coloreados en la fluoroscopia).
+```{r}
+ggplot(datos,aes(x=vasos.coloreados,fill=diagnostico)) +geom_bar() + xlab("Vasos principales coloreados") + ylab("Total") + scale_fill_discrete(name="Diagnóstico")
+```
+
+En proporción.
+```{r}
+ggplot(datos,aes(x=vasos.coloreados,fill=diagnostico)) +geom_bar(position="fill") + xlab("Vasos principales coloreados") + ylab("Proporción") + scale_fill_discrete(name="Diagnóstico")
+```
+
+Variable *exploracion.talio* (resultado de la prueba de esfuerzo con talio).
+```{r}
+ggplot(datos,aes(x=exploracion.talio,fill=diagnostico)) +geom_bar() + xlab("Resultado prueba talio") + ylab("Total") + scale_fill_discrete(name="Diagnóstico")
+```
+
+En proporción.
+```{r}
+ggplot(datos,aes(x=exploracion.talio,fill=diagnostico)) +geom_bar(position="fill") + xlab("Resultado prueba talio") + ylab("Proporción") + scale_fill_discrete(name="Diagnóstico")
+```
+
+
+---
+
+
+Vamos a generar con los datos un modelo de **regresión logística** para poder predecir el valor de la variable diagnóstico.
+La regresión logística nos proporciona una estimación de probabilidad para la predicción.  
+
+En una primera aproximación utilizaremos todas las variables disponibles para generar el modelo y luego eliminaremos aquellas que no sean significativas para el resultado.
+```{r}
+modelo.diagnostico.todas <- glm(datos$diagnostico ~ datos$edad + datos$sexo + datos$dolor + datos$tension + datos$colesterol + datos$azucar + datos$ecografia + datos$frecmax + datos$ejercicio + datos$depST + datos$pendiente + datos$vasos.coloreados + datos$exploracion.talio , data = datos, family = "binomial")
+summary(modelo.diagnostico.todas)
+```
+La función *glm* nos ha generado las variables auxiliares para cada uno de los valores de las variables categóricas.
+El nivel base de referencia que usa R por defecto es el primer nivel de la variable de tipo factor e interpreta el resto de niveles en base a este nivel.
+
+Estudiamos la bondad del ajuste del modelo que hemos obtenido con el test de Hosman-Lemeshow.
+En la librería (ResourceSelection) hay una función que ajusta el test de Hosmer- Lemeshow.
+
+En el test de Hosman-Lemeshow la hipótesis nula es que los valores observados corresponden con los valores esperados.  
+Realizamos el test al modelo.
+```{r}
+hl <- hoslem.test(modelo.diagnostico.todas$y, fitted(modelo.diagnostico.todas))
+hl
+```
+Obtenemos un valor p < 0.05, que es significativo, con lo que podemos rechazar la hipótesis nula de que los valores esperados se corresponden a los valores predichos por el modelo de regresión logística.
+
+Podemos visualizar las diferencias entre los valores esperados y los obtenidos por el modelo.
+```{r}
+expected <- round(hl$expected, 0)
+observed <- round(hl$observed, 0)
+cbind(expected, observed)
+difer<-abs(expected - observed)
+colSums(difer)
+```
+Si dibujamos la curva ROC.
+```{r}
+predicciones <- predict(modelo.diagnostico.todas, type = "response")
+pred <- prediction(predicciones, datos$diagnostico)
+perf <- performance(pred,"tpr","fpr")
+plot(perf,colorize=TRUE)
+```
+
+El área bajo la curva es.
+```{r}
+as.numeric(performance(pred,"auc")@y.values)
+```
+La precisión del modelo es bastante alta, un 0.94, significa que hay un 94% de posibilidades de que el modelo pueda distinguir entre un paciente sano y otro enfermo.
+
+
+**Reducción del modelo**:
+
+Si revisamos los coeficientes del modelo vemos que solo algunos de ellos tienen valores p significativos, podemos suponer que solo éstos realizan una contribución significativa a la predicción del resultado.
+
+El resto los eliminamos del modelo, quedando de la siguiente forma.
+```{r}
+modelo.diagnostico <- glm(datos$diagnostico ~ datos$sexo + datos$dolor + datos$tension + datos$colesterol + datos$frecmax + datos$ejercicio + datos$depST  + datos$vasos.coloreados + datos$exploracion.talio , data = datos, family = "binomial")
+summary(modelo.diagnostico)
+```
+Calulamos los OR del modelo.
+```{r}
+exp(modelo.diagnostico$coefficients)
+```
+Si el valor es mayor que 1, entonces indica que a medida que aumenta el predictor, las probabilidades de los resultados aumentan. A la inversa, un valor menor que 1 indica que a medida que aumenta el predictor, las probabilidades de los resultados disminuyen. 
+
+En base a los coeficientes obtenidos, podemos decir que el ser mujer influye de manera positiva en el modelo, aumentando la probabilidad de que el pacientes esté sano, respecto a que esté enfermo.
+
+En este caso, podemos decir que las probabilidades de que un paciente esté sano si es mujer son 5.7 veces superiores a las de un paciente varón.
+
+De esta forma podemos decir que las variables que más contribuyen de forma positiva a que el paciente esté sano son:  
+El ser mujer (5.7).  
+El dolor de tipo atípico (8.06).  
+El dolor de otro tipo (6.96).  
+
+Y las que contribuyen a que el paciente esté enfermo son:  
+1 vaso principal coloreado (0.14).  
+2 vasos principales coloreados (0.06).  
+3 vasos principales coloreados (0.14).  
+Exploración talio con daño reversible (0.18).  
+
+
+Evaluamos al igual que antes la bondad del modelo reducido.
+```{r}
+hl <- hoslem.test(modelo.diagnostico$y, fitted(modelo.diagnostico))
+hl
+```
+En este caso, obtenemos un valor p > 0.05, que no es significativo, con lo que no podemos rechazar la hipótesis nula y por lo tanto podemos afirmar que los valores esperados se corresponden a los valores predichos por el modelo de regresión logística.
+
+Comparamos los valores esperados con los observados.
+```{r}
+expected <- round(hl$expected, 0)
+observed <- round(hl$observed, 0)
+cbind(expected, observed)
+difer<-abs(expected - observed)
+colSums(difer)
+```
+Comparando con el modelo anterior, se clasifican erróneamente 15 casos en lugar de 45.
+
+
+Curva ROC
+```{r}
+predicciones <- predict(modelo.diagnostico, type = "response")
+pred <- prediction(predicciones, datos$diagnostico)
+perf <- performance(pred,"tpr","fpr")
+plot(perf,colorize=TRUE)
+```
+
+El área bajo la curva es
+```{r}
+as.numeric(performance(pred,"auc")@y.values)
+```
+Al eliminar las variables del modelo hemos perdido algo de precisión, pero prácticamente es la misma que con todas las variables.
+
+
+## 5. Representación de los resultados a partir de tablas y gráficas.
+
+A lo largo del desarrollo de la práctica se han ido mostrando las tablas y representaciones gráficas que ilustran cada caso.
+
+
+## 6. Resolución del problema.
+A partir de los resultados obtenidos, ¿cuáles son las conclusiones? ¿Los resultados permiten responder al problema?
+
+
+La conclusión del estudio es que, como era de esperar, no todas las variables influyen de forma significativa en el diagnóstico del paciente como enfermo coronario o sano.
+
+Hemos podido determinar que las variables que más influencia tienen sobre el resultado final son:
+
+El sexo del paciente, las mujeres tienen mejor pronóstico que los hombres.  
+El tipo de dolor que presenta el paciente, si no es el típico dolor de angina de pecho o es de otro tipo, las opciones de padecer enfermedad coronaria disminuyen considerablemente.  
+
+Si el número de vasos principales coloreados en la fluoroscopia está entre 1 y 3, el paciente tiene muchas posibilidades de estar enfermo.  
+Si la exploración con talio muestra daño reversible también empeora considerablemente el pronóstico.  
+
+
+Nuestro objetivo era identificar los parámetros que nos permitan distinguir entre un paciente sano y enfermo, por lo que sí  podríamos decir que hemos obtenido una respuesta al problema con el modelo de regresión.
+
+
+
+
+
+
+
+
+
+
+
+
